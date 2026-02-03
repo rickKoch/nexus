@@ -31,16 +31,32 @@ func (h HttpServer) GetSegment(w http.ResponseWriter, r *http.Request, params Ge
 }
 
 // ListSegments handles GET /segment
-func (h HttpServer) ListSegments(w http.ResponseWriter, r *http.Request) {
-	segs, err := h.app.Segments.ListSegments.Handle(r.Context())
+func (h HttpServer) ListSegments(w http.ResponseWriter, r *http.Request, params ListSegmentsParams) {
+	cmd := segments.ListSegments{}
+	if params.Page != nil {
+		cmd.Page = *params.Page
+	}
+	if params.PageSize != nil {
+		cmd.PageSize = *params.PageSize
+	}
+
+	result, err := h.app.Segments.ListSegments.Handle(r.Context(), cmd)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	response := make([]SegmentResponse, 0, len(segs))
-	for i := range segs {
-		response = append(response, toSegmentResponse(&segs[i]))
+	items := make([]SegmentResponse, 0, len(result.Segments))
+	for i := range result.Segments {
+		items = append(items, toSegmentResponse(&result.Segments[i]))
+	}
+
+	response := ListSegmentsResponse{
+		Items:      items,
+		TotalCount: result.TotalCount,
+		Page:       result.Page,
+		PageSize:   result.PageSize,
+		TotalPages: result.TotalPages,
 	}
 
 	render(w, http.StatusOK, response)
@@ -115,6 +131,14 @@ type SegmentResponse struct {
 	TTLSeconds *int   `json:"ttl_seconds,omitempty"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
+}
+
+type ListSegmentsResponse struct {
+	Items      []SegmentResponse `json:"items"`
+	TotalCount int               `json:"total_count"`
+	Page       int               `json:"page"`
+	PageSize   int               `json:"page_size"`
+	TotalPages int               `json:"total_pages"`
 }
 
 func render(w http.ResponseWriter, status int, data interface{}) {

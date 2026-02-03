@@ -23,13 +23,17 @@ func TestListSegmentsHandler_Handle(t *testing.T) {
 		freshRepo := adapters.NewInMemorySegmentRepository()
 		freshListHandler, _ := segments.NewListSegmentsHandler(freshRepo)
 
-		list, err := freshListHandler.Handle(ctx)
+		result, err := freshListHandler.Handle(ctx, segments.ListSegments{})
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		if len(list) != 0 {
-			t.Errorf("expected empty list, got %d items", len(list))
+		if len(result.Segments) != 0 {
+			t.Errorf("expected empty list, got %d items", len(result.Segments))
+		}
+
+		if result.TotalCount != 0 {
+			t.Errorf("expected total count 0, got %d", result.TotalCount)
 		}
 	})
 
@@ -44,13 +48,13 @@ func TestListSegmentsHandler_Handle(t *testing.T) {
 			t.Fatalf("failed to create segment: %v", err)
 		}
 
-		list, err := listHandler.Handle(ctx)
+		result, err := listHandler.Handle(ctx, segments.ListSegments{})
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		if len(list) < 2 {
-			t.Errorf("expected at least 2 segments, got %d", len(list))
+		if len(result.Segments) < 2 {
+			t.Errorf("expected at least 2 segments, got %d", len(result.Segments))
 		}
 	})
 
@@ -67,17 +71,96 @@ func TestListSegmentsHandler_Handle(t *testing.T) {
 		// Create another segment
 		_, _ = freshCreateHandler.Handle(ctx, segments.CreateSegment{Name: "still-exists"})
 
-		list, err := freshListHandler.Handle(ctx)
+		result, err := freshListHandler.Handle(ctx, segments.ListSegments{})
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
 
-		if len(list) != 1 {
-			t.Errorf("expected 1 segment, got %d", len(list))
+		if len(result.Segments) != 1 {
+			t.Errorf("expected 1 segment, got %d", len(result.Segments))
 		}
 
-		if list[0].Name() != "still-exists" {
-			t.Errorf("expected 'still-exists', got '%s'", list[0].Name())
+		if result.Segments[0].Name() != "still-exists" {
+			t.Errorf("expected 'still-exists', got '%s'", result.Segments[0].Name())
+		}
+	})
+
+	t.Run("respects pagination parameters", func(t *testing.T) {
+		freshRepo := adapters.NewInMemorySegmentRepository()
+		freshCreateHandler, _ := segments.NewCreateSegmentHandler(freshRepo)
+		freshListHandler, _ := segments.NewListSegmentsHandler(freshRepo)
+
+		// Create 5 segments
+		for i := 1; i <= 5; i++ {
+			_, _ = freshCreateHandler.Handle(ctx, segments.CreateSegment{Name: "segment"})
+		}
+
+		// Request page 1 with page size 2
+		result, err := freshListHandler.Handle(ctx, segments.ListSegments{Page: 1, PageSize: 2})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(result.Segments) != 2 {
+			t.Errorf("expected 2 segments, got %d", len(result.Segments))
+		}
+
+		if result.TotalCount != 5 {
+			t.Errorf("expected total count 5, got %d", result.TotalCount)
+		}
+
+		if result.Page != 1 {
+			t.Errorf("expected page 1, got %d", result.Page)
+		}
+
+		if result.PageSize != 2 {
+			t.Errorf("expected page size 2, got %d", result.PageSize)
+		}
+
+		if result.TotalPages != 3 {
+			t.Errorf("expected total pages 3, got %d", result.TotalPages)
+		}
+
+		// Request page 3 with page size 2 (should have 1 item)
+		result, err = freshListHandler.Handle(ctx, segments.ListSegments{Page: 3, PageSize: 2})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if len(result.Segments) != 1 {
+			t.Errorf("expected 1 segment on last page, got %d", len(result.Segments))
+		}
+	})
+
+	t.Run("applies default pagination when not specified", func(t *testing.T) {
+		freshRepo := adapters.NewInMemorySegmentRepository()
+		freshListHandler, _ := segments.NewListSegmentsHandler(freshRepo)
+
+		result, err := freshListHandler.Handle(ctx, segments.ListSegments{})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if result.Page != segments.DefaultPage {
+			t.Errorf("expected default page %d, got %d", segments.DefaultPage, result.Page)
+		}
+
+		if result.PageSize != segments.DefaultPageSize {
+			t.Errorf("expected default page size %d, got %d", segments.DefaultPageSize, result.PageSize)
+		}
+	})
+
+	t.Run("enforces max page size", func(t *testing.T) {
+		freshRepo := adapters.NewInMemorySegmentRepository()
+		freshListHandler, _ := segments.NewListSegmentsHandler(freshRepo)
+
+		result, err := freshListHandler.Handle(ctx, segments.ListSegments{PageSize: 500})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if result.PageSize != segments.MaxPageSize {
+			t.Errorf("expected max page size %d, got %d", segments.MaxPageSize, result.PageSize)
 		}
 	})
 }

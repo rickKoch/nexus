@@ -13,7 +13,7 @@ type ServerInterface interface {
 	GetSegment(w http.ResponseWriter, r *http.Request, params GetSegmentParams)
 
 	// (GET /segment)
-	ListSegments(w http.ResponseWriter, r *http.Request)
+	ListSegments(w http.ResponseWriter, r *http.Request, params ListSegmentsParams)
 
 	// (POST /segment)
 	CreateSegment(w http.ResponseWriter, r *http.Request)
@@ -74,8 +74,30 @@ func (siw *ServerInterfaceWrapper) GetSegment(w http.ResponseWriter, r *http.Req
 func (siw *ServerInterfaceWrapper) ListSegments(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	var params ListSegmentsParams
+
+	// Parse page parameter
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		page, err := strconv.Atoi(pageStr)
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, err)
+			return
+		}
+		params.Page = &page
+	}
+
+	// Parse page_size parameter
+	if pageSizeStr := r.URL.Query().Get("page_size"); pageSizeStr != "" {
+		pageSize, err := strconv.Atoi(pageSizeStr)
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, err)
+			return
+		}
+		params.PageSize = &pageSize
+	}
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListSegments(w, r)
+		siw.Handler.ListSegments(w, r, params)
 	})
 
 	handler.ServeHTTP(w, r.WithContext(ctx))
@@ -131,6 +153,11 @@ func (siw *ServerInterfaceWrapper) DeleteSegment(w http.ResponseWriter, r *http.
 
 type GetSegmentParams struct {
 	ID int `json:"id"`
+}
+
+type ListSegmentsParams struct {
+	Page     *int `json:"page,omitempty"`
+	PageSize *int `json:"page_size,omitempty"`
 }
 
 type UpdateSegmentParams struct {

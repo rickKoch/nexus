@@ -27,19 +27,52 @@ func NewInMemorySegmentRepository() *InMemorySegmentRepository {
 	}
 }
 
-// List returns all non-deleted segments.
-func (r *InMemorySegmentRepository) List(ctx context.Context) ([]segment.Segment, error) {
+// List returns paginated non-deleted segments.
+func (r *InMemorySegmentRepository) List(ctx context.Context, params segment.ListParams) (*segment.ListResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make([]segment.Segment, 0, len(r.segments))
+	// Collect all non-deleted segments
+	all := make([]segment.Segment, 0, len(r.segments))
 	for _, s := range r.segments {
 		if !s.IsDeleted() {
-			result = append(result, *s)
+			all = append(all, *s)
 		}
 	}
 
-	return result, nil
+	// Sort by ID for consistent ordering
+	for i := 0; i < len(all)-1; i++ {
+		for j := i + 1; j < len(all); j++ {
+			if all[i].ID() > all[j].ID() {
+				all[i], all[j] = all[j], all[i]
+			}
+		}
+	}
+
+	totalCount := len(all)
+
+	// Apply pagination
+	start := (params.Page - 1) * params.PageSize
+	if start >= totalCount {
+		return &segment.ListResult{
+			Segments:   []segment.Segment{},
+			TotalCount: totalCount,
+			Page:       params.Page,
+			PageSize:   params.PageSize,
+		}, nil
+	}
+
+	end := start + params.PageSize
+	if end > totalCount {
+		end = totalCount
+	}
+
+	return &segment.ListResult{
+		Segments:   all[start:end],
+		TotalCount: totalCount,
+		Page:       params.Page,
+		PageSize:   params.PageSize,
+	}, nil
 }
 
 // Get returns a segment by ID.

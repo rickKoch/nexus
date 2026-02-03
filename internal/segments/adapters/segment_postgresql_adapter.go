@@ -20,6 +20,12 @@ type segmentRow struct {
 	DeletedAt  *time.Time `db:"deleted_at"`
 }
 
+// segmentRowWithCount includes total count for paginated queries.
+type segmentRowWithCount struct {
+	segmentRow
+	TotalCount int `db:"total_count"`
+}
+
 // PostgreSQLSegmentRepository is a PostgreSQL implementation of segment.Repository.
 type PostgreSQLSegmentRepository struct {
 	db *sqlx.DB
@@ -32,18 +38,26 @@ func NewPostgreSQLSegmentRepository(db *sqlx.DB) *PostgreSQLSegmentRepository {
 	}
 }
 
-// List returns all non-deleted segments.
-func (r *PostgreSQLSegmentRepository) List(ctx context.Context) ([]segment.Segment, error) {
+// List returns paginated non-deleted segments.
+func (r *PostgreSQLSegmentRepository) List(ctx context.Context, params segment.ListParams) (*segment.ListResult, error) {
 	query := `
-		SELECT id, name, ttl_seconds, created_at, updated_at, deleted_at
+		SELECT id, name, ttl_seconds, created_at, updated_at, deleted_at,
+		       COUNT(*) OVER() AS total_count
 		FROM segments
 		WHERE deleted_at IS NULL
 		ORDER BY id
+		LIMIT $1 OFFSET $2
 	`
 
-	var rows []segmentRow
-	if err := r.db.SelectContext(ctx, &rows, query); err != nil {
+	offset := (params.Page - 1) * params.PageSize
+	var rows []segmentRowWithCount
+	if err := r.db.SelectContext(ctx, &rows, query, params.PageSize, offset); err != nil {
 		return nil, err
+	}
+
+	var totalCount int
+	if len(rows) > 0 {
+		totalCount = rows[0].TotalCount
 	}
 
 	segments := make([]segment.Segment, 0, len(rows))
@@ -54,7 +68,12 @@ func (r *PostgreSQLSegmentRepository) List(ctx context.Context) ([]segment.Segme
 		segments = append(segments, *s)
 	}
 
-	return segments, nil
+	return &segment.ListResult{
+		Segments:   segments,
+		TotalCount: totalCount,
+		Page:       params.Page,
+		PageSize:   params.PageSize,
+	}, nil
 }
 
 // Get returns a segment by ID.
